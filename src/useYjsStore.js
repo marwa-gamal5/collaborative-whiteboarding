@@ -17,10 +17,11 @@ import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
 
 export function useYjsStore({
-	roomId = 'example',
-	hostUrl = import.meta.env.MODE === 'development'
-		? 'ws://localhost:1234'
-		: 'wss://demos.yjs.dev',
+	roomId = 'myroom',
+	// hostUrl = import.meta.env.MODE === 'development'
+	// 	? 'ws://localhost:1234'
+	// 	: 'wss://demos.yjs.dev',
+	hostUrl = 'ws://192.168.21.40:8000/ws/crdt/',
 	shapeUtils = [],
 }) {
 	const [store] = useState(() => {
