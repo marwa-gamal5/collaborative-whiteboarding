@@ -2,15 +2,15 @@ import { Tldraw, track, useEditor } from 'tldraw'
 import 'tldraw/tldraw.css'
 import { useYjsStore } from './useYjsStore'
 
-// const HOST_URL =
-//   import.meta.env.MODE === 'development'
-//     ? 'ws://localhost:1234'
-//     : 'wss://demos.yjs.dev'
+const HOST_URL =
+  import.meta.env.MODE === 'development'
+    ? 'ws://localhost:1234'
+    : 'wss://demos.yjs.dev'
 
-  const HOST_URL ="ws://192.168.21.40:8000/ws/crdt/"
+  // const HOST_URL ="ws://192.168.21.40:8000/ws/crdt/"
 export default function YjsExample() {
   const store = useYjsStore({
-    roomId: 'myroom/',
+    roomId: 'example17',
     hostUrl: HOST_URL,
   })
 

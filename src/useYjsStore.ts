@@ -1,6 +1,9 @@
 import {
 	InstancePresenceRecordType,
-
+	TLAnyShapeUtilConstructor,
+	TLInstancePresence,
+	TLRecord,
+	TLStoreWithStatus,
 	computed,
 	createPresenceStateDerivation,
 	createTLStore,
@@ -9,7 +12,7 @@ import {
 	getUserPreferences,
 	setUserPreferences,
 	react,
-
+	SerializedSchema,
 } from 'tldraw'
 import { useEffect, useMemo, useState } from 'react'
 import { YKeyValue } from 'y-utility/y-keyvalue'
@@ -17,13 +20,17 @@ import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
 
 export function useYjsStore({
-	roomId = 'myroom',
-	// hostUrl = import.meta.env.MODE === 'development'
-	// 	? 'ws://localhost:1234'
-	// 	: 'wss://demos.yjs.dev',
-	hostUrl = 'ws://192.168.21.40:8000/ws/crdt/',
+	roomId = 'example',
+	hostUrl = import.meta.env.MODE === 'development'
+		? 'ws://localhost:1234'
+		: 'wss://demos.yjs.dev',
 	shapeUtils = [],
-}) {
+}: Partial<{
+	hostUrl: string
+	roomId: string
+	version: number
+	shapeUtils: TLAnyShapeUtilConstructor[]
+}>) {
 	const [store] = useState(() => {
 		const store = createTLStore({
 			shapeUtils: [...defaultShapeUtils, ...shapeUtils],
@@ -32,15 +39,15 @@ export function useYjsStore({
 		return store
 	})
 
-	const [storeWithStatus, setStoreWithStatus] = useState({
+	const [storeWithStatus, setStoreWithStatus] = useState<TLStoreWithStatus>({
 		status: 'loading',
 	})
 
 	const { yDoc, yStore, meta, room } = useMemo(() => {
 		const yDoc = new Y.Doc({ gc: true })
-		const yArr = yDoc.getArray(`tl_${roomId}`)
+		const yArr = yDoc.getArray<{ key: string; val: TLRecord }>(`tl_${roomId}`)
 		const yStore = new YKeyValue(yArr)
-		const meta = yDoc.getMap('meta')
+		const meta = yDoc.getMap<SerializedSchema>('meta')
 
 		return {
 			yDoc,
@@ -53,50 +60,67 @@ export function useYjsStore({
 	useEffect(() => {
 		setStoreWithStatus({ status: 'loading' })
 
-		const unsubs = []
+		const unsubs: (() => void)[] = []
 
 		function handleSync() {
+			// 1.
+			// Connect store to yjs store and vis versa, for both the document and awareness
+
 			/* -------------------- Document -------------------- */
 
+			// Sync store changes to the yjs doc
 			unsubs.push(
-				store.listen(function syncStoreChangesToYjsDoc({ changes }) {
-					yDoc.transact(() => {
-						Object.values(changes.added).forEach((record) => {
-							yStore.set(record.id, record)
-						})
+				store.listen(
+					function syncStoreChangesToYjsDoc({ changes }) {
+						yDoc.transact(() => {
+							Object.values(changes.added).forEach((record) => {
+								yStore.set(record.id, record)
+							})
 
-						Object.values(changes.updated).forEach(([_, record]) => {
-							yStore.set(record.id, record)
-						})
+							Object.values(changes.updated).forEach(([_, record]) => {
+								yStore.set(record.id, record)
+							})
 
-						Object.values(changes.removed).forEach((record) => {
-							yStore.delete(record.id)
+							Object.values(changes.removed).forEach((record) => {
+								yStore.delete(record.id)
+							})
 						})
-					})
-				}, { source: 'user', scope: 'document' }),
+					},
+					{ source: 'user', scope: 'document' }, // only sync user's document changes
+				),
 			)
 
-			const handleChange = (changes, transaction) => {
+			// Sync the yjs doc changes to the store
+			const handleChange = (
+				changes: Map<
+					string,
+					| { action: 'delete'; oldValue: TLRecord }
+					| { action: 'update'; oldValue: TLRecord; newValue: TLRecord }
+					| { action: 'add'; newValue: TLRecord }
+				>,
+				transaction: Y.Transaction,
+			) => {
 				if (transaction.local) return
 
-				const toRemove = []
-				const toPut = []
+				const toRemove: TLRecord['id'][] = []
+				const toPut: TLRecord[] = []
 
 				changes.forEach((change, id) => {
 					switch (change.action) {
 						case 'add':
 						case 'update': {
-							const record = yStore.get(id)
+							const record = yStore.get(id)!
 							toPut.push(record)
 							break
 						}
 						case 'delete': {
-							toRemove.push(id)
+							toRemove.push(id as TLRecord['id'])
 							break
 						}
 					}
 				})
 
+				// put / remove the records in the store
 				store.mergeRemoteChanges(() => {
 					if (toRemove.length) store.remove(toRemove)
 					if (toPut.length) store.put(toPut)
@@ -106,10 +130,16 @@ export function useYjsStore({
 			yStore.on('change', handleChange)
 			unsubs.push(() => yStore.off('change', handleChange))
 
+			/* -------------------- Awareness ------------------- */
+
 			const yClientId = room.awareness.clientID.toString()
 			setUserPreferences({ id: yClientId })
 
-			const userPreferences = computed('userPreferences', () => {
+			const userPreferences = computed<{
+				id: string
+				color: string
+				name: string
+			}>('userPreferences', () => {
 				const user = getUserPreferences()
 				return {
 					id: user.id,
@@ -118,14 +148,17 @@ export function useYjsStore({
 				}
 			})
 
+			// Create the instance presence derivation
 			const presenceId = InstancePresenceRecordType.createId(yClientId)
 			const presenceDerivation = createPresenceStateDerivation(
 				userPreferences,
 				presenceId,
 			)(store)
 
+			// Set our initial presence from the derivation's current value
 			room.awareness.setLocalStateField('presence', presenceDerivation.get())
 
+			// When the derivation change, sync presence to to yjs awareness
 			unsubs.push(
 				react('when presence changes', () => {
 					const presence = presenceDerivation.get()
@@ -135,11 +168,21 @@ export function useYjsStore({
 				}),
 			)
 
-			const handleUpdate = (update) => {
-				const states = room.awareness.getStates()
-				const toRemove = []
-				const toPut = []
+			// Sync yjs awareness changes to the store
+			const handleUpdate = (update: {
+				added: number[]
+				updated: number[]
+				removed: number[]
+			}) => {
+				const states = room.awareness.getStates() as Map<
+					number,
+					{ presence: TLInstancePresence }
+				>
 
+				const toRemove: TLInstancePresence['id'][] = []
+				const toPut: TLInstancePresence[] = []
+
+				// Connect records to put / remove
 				for (const clientId of update.added) {
 					const state = states.get(clientId)
 					if (state?.presence && state.presence.id !== presenceId) {
@@ -160,6 +203,7 @@ export function useYjsStore({
 					)
 				}
 
+				// put / remove the records in the store
 				store.mergeRemoteChanges(() => {
 					if (toRemove.length) store.remove(toRemove)
 					if (toPut.length) store.put(toPut)
@@ -171,7 +215,7 @@ export function useYjsStore({
 				if (!theirSchema) {
 					throw new Error('No schema found in the yjs doc')
 				}
-
+				// If the shared schema is newer than our schema, the user must refresh
 				const newMigrations = store.schema.getMigrationsSince(theirSchema)
 
 				if (!newMigrations.ok || newMigrations.value.length > 0) {
@@ -179,14 +223,17 @@ export function useYjsStore({
 					yDoc.destroy()
 				}
 			}
-
 			meta.observe(handleMetaUpdate)
 			unsubs.push(() => meta.unobserve(handleMetaUpdate))
 
 			room.awareness.on('update', handleUpdate)
 			unsubs.push(() => room.awareness.off('update', handleUpdate))
 
+			// 2.
+			// Initialize the store with the yjs doc records—or, if the yjs doc
+			// is empty, initialize the yjs doc with the default store records.
 			if (yStore.yarray.length) {
+				// Replace the store records with the yjs doc records
 				const ourSchema = store.schema.serialize()
 				const theirSchema = meta.get('schema')
 				if (!theirSchema) {
@@ -201,20 +248,21 @@ export function useYjsStore({
 						records.map((record) => [record.id, record]),
 					),
 				})
-
 				if (migrationResult.type === 'error') {
+					// if the schema is newer than ours, the user must refresh
 					console.error(migrationResult.reason)
 					window.alert('The schema has been updated. Please refresh the page.')
 					return
 				}
 
 				yDoc.transact(() => {
+					// delete any deleted records from the yjs doc
 					for (const r of records) {
 						if (!migrationResult.value[r.id]) {
 							yStore.delete(r.id)
 						}
 					}
-					for (const r of Object.values(migrationResult.value)) {
+					for (const r of Object.values(migrationResult.value) as TLRecord[]) {
 						yStore.set(r.id, r)
 					}
 					meta.set('schema', ourSchema)
@@ -225,6 +273,8 @@ export function useYjsStore({
 					schema: ourSchema,
 				})
 			} else {
+				// Create the initial store records
+				// Sync the store records to the yjs doc
 				yDoc.transact(() => {
 					for (const record of store.allRecords()) {
 						yStore.set(record.id, record)
@@ -242,7 +292,12 @@ export function useYjsStore({
 
 		let hasConnectedBefore = false
 
-		function handleStatusChange({ status }) {
+		function handleStatusChange({
+			status,
+		}: {
+			status: 'disconnected' | 'connected'
+		}) {
+			// If we're disconnected, set the store status to 'synced-remote' and the connection status to 'offline'
 			if (status === 'disconnected') {
 				setStoreWithStatus({
 					store,
