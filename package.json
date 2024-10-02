@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"vite --host 192.168.1.3 --port 5371\" \"cross-env HOST=0.0.0.0 PORT=1234 npx y-websocket\" --kill-others",
+    "dev": "concurrently \"vite\" \"HOST=localhost PORT=1234 npx y-websocket\" --kill-others",
     "dev:win": "concurrently \"vite\" \"set HOST=localhost&& set PORT=1234 && npx y-websocket\" --kill-others",
     "build": "vite build",
     "lint": "eslint .",
@@ -14,6 +14,7 @@
     "concurrently": "^8.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2",
     "tldraw": "^2.4.6",
     "y-utility": "^0.1.4",
     "y-websocket": "^2.0.4",

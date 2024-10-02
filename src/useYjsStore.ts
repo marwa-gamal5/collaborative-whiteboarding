@@ -20,10 +20,12 @@ import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
 
 export function useYjsStore({
-	roomId = 'example',
+	roomId = 'myroom/',
+	// hostUrl = 'wss://board.alrowadedu.com/ws/crdt/',
+	// 'wss://demos.yjs.dev',
 	hostUrl = import.meta.env.MODE === 'development'
 		? 'ws://localhost:1234'
-		: 'wss://demos.yjs.dev',
+		: '',
 	shapeUtils = [],
 }: Partial<{
 	hostUrl: string
@@ -291,6 +293,7 @@ export function useYjsStore({
 		}
 
 		let hasConnectedBefore = false
+
 
 		function handleStatusChange({
 			status,

@@ -66,3 +66,11 @@ html,
 .examples__list__item a:hover {
 	text-decoration: underline;
 }
+
+
+/* Add this to your CSS file */
+.read-only {
+	pointer-events: none; /* Disable all interactions */
+	cursor: none; /* Hide the cursor */
+  }
+  
