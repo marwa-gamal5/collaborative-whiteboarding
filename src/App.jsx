@@ -1,4 +1,5 @@
-App.jsx
+// App.jsx
+
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, useNavigate, useParams } from 'react-router-dom'
 import { Tldraw, track, useEditor } from 'tldraw'
@@ -44,22 +45,17 @@ function YjsExample() {
   const store = useYjsStore({
     roomId: 'myroom/',
     hostUrl: HOST_URL,
+    role,
   })
 
   return (
-    <div className={`tldraw__editor ${role === 'student' ? 'read-only' : ''}`}  >
+    <div className={`tldraw__editor ${role === 'student' ? 'read-only' : ''}`}>
       <Tldraw
         autoFocus
         store={store}
         onMount={(editor) => {
           if (role === 'student') {
             editor.updateInstanceState({ isReadonly: true }) // Make the board read-only for students
-
-            // Hide cursor and prevent any interaction for students
-            editor.on('pointerMove', (e) => e.preventDefault())
-            editor.on('pointerDown', (e) => e.preventDefault())
-            editor.on('pointerUp', (e) => e.preventDefault())
-            editor.on('pointerClick', (e) => e.preventDefault())
           }
         }}
         components={{
@@ -73,7 +69,6 @@ function YjsExample() {
 // NameEditor component for user preferences
 const NameEditor = track(() => {
   const editor = useEditor()
-
   const { color, name } = editor.user.getUserPreferences()
 
   return (
